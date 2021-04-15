@@ -1,6 +1,7 @@
 from tensorflow.keras.layers import Activation, Add, GlobalAveragePooling2D, BatchNormalization, Concatenate, Conv2D, Conv2DTranspose, DepthwiseConv2D, Input, Lambda, MaxPooling2D, ReLU, UpSampling2D
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
+import numpy as np
 
 # SqueezeUnet adapted from Squeeze U-Net: A Memory and Energy Efficient Image Segmentation Network , Beheshti et al, 2020
 
@@ -10,6 +11,7 @@ class squeezeUnet():
         self.input_width = input_width
         self.input_height = input_height
         self.image_shape = (self.input_width, self.input_height, self.N_channels)
+        self.N_classes = N_classes
 
         self.model = self.model()
 
@@ -17,7 +19,7 @@ class squeezeUnet():
         if ds:
             x = Conv2D(squeeze, (1, 1), padding='valid', strides=(2, 2), activation='relu')(input_layer)
         else:
-            x = Conv2D(squeeze, (1, 1), padding='valid', activation='relu')(input_layer)
+            x = Conv2D(squeeze, (1, 1), padding='same', activation='relu')(input_layer)
         left = Conv2D(expand, (1, 1), padding='same', activation='relu')(x)
         right = Conv2D(expand, (3, 3), padding='same', activation='relu')(x)
 
@@ -37,7 +39,7 @@ class squeezeUnet():
         return x
     
     def upsample_block(self, input_layer1, input_layer2, squeeze_t, expand_t, squeeze):
-        x = self.fire_block_transpose(input_layer, squeeze_t, expand_t)
+        x = self.fire_block_transpose(input_layer1, squeeze_t, expand_t)
         x = Concatenate()([x, input_layer2])
         x = self.fire_block(x, squeeze, expand_t)
         x = self.fire_block(x, squeeze, expand_t)
@@ -47,16 +49,17 @@ class squeezeUnet():
     def model(self):
         main_input = Input(shape=self.image_shape)
 
-        x = Conv2D(32, (3, 3), padding='same', activation='relu')(main_input)
-        x = Conv2D(32, (3, 3), padding='same', activation='relu')(x)
+        x = Conv2D(64, (3, 3), padding='same', activation='relu')(main_input)
+        x = Conv2D(64, (3, 3), padding='same', activation='relu')(x)
+
         ds1 = self.downsample_block(x, 32, 64)
-        ds2 = self.downsample_block(x, 48, 128)
-        ds3 = self.downsample_block(x, 64, 256)
-        ds4 = self.downsample_block(x, 80, 512)
+        ds2 = self.downsample_block(ds1, 48, 128)
+        ds3 = self.downsample_block(ds2, 64, 256)
+        ds4 = self.downsample_block(ds3, 80, 512)
 
         us1 = self.upsample_block(ds4, ds3, 80, 256, 64)
-        us2 = self.upsample_block(ds2, us1, 64, 128, 48)
-        us3 = self.upsample_block(ds1, us2, 48, 64, 32)
+        us2 = self.upsample_block(us1, ds2, 64, 128, 48)
+        us3 = self.upsample_block(us2, ds1, 48, 64, 32)
 
         output = Conv2DTranspose(64, (2, 2), padding='same', strides=(2, 2), activation='relu')(us3)
         output = Concatenate()([output, x])
